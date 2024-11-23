@@ -1,222 +1,162 @@
 import './scss/styles.scss';
-import { Api } from './components/base/api';
-import { EventEmitter, IEvents } from './components/base/events';
-import { API_URL, CDN_URL } from './utils/constants';
 
+import { CDN_URL, API_URL } from './utils/constants';
+import { EventEmitter } from './components/base/events';
+import { ApiModel } from './components/Model/ApiModel';
+import { DataModel } from './components/Model/DataModel';
+import { Card } from './components/View/Card';
+import { CardPreview } from './components/View/CardPreview';
+import { IOrderForm, IProductItem } from './types';
+import { Modal } from './components/View/Modal';
+import { ensureElement } from './utils/utils';
+
+import { Basket } from './components/View/Basket';
+import { BasketItem } from './components/View/BasketItem';
+import { FormModel } from './components/Model/FormModel';
+import { Order } from './components/View/FormOrder';
+import { Contacts } from './components/View/FormContacts';
+import { Success } from './components/View/Success';
+import { BasketModel } from './components/Model/BasketModel';
+
+const cardCatalogTemplate = document.querySelector('#card-catalog') as HTMLTemplateElement;
+const cardPreviewTemplate = document.querySelector('#card-preview') as HTMLTemplateElement;
+const basketTemplate = document.querySelector('#basket') as HTMLTemplateElement;
+const cardBasketTemplate = document.querySelector('#card-basket') as HTMLTemplateElement;
+const orderTemplate = document.querySelector('#order') as HTMLTemplateElement;
+const contactsTemplate = document.querySelector('#contacts') as HTMLTemplateElement;
+const successTemplate = document.querySelector('#success') as HTMLTemplateElement;
+
+const apiModel = new ApiModel(CDN_URL, API_URL);
 const events = new EventEmitter();
+const dataModel = new DataModel(events);
+const modal = new Modal(ensureElement<HTMLElement>('#modal-container'), events);
+const basket = new Basket(basketTemplate, events);
+const basketModel = new BasketModel();
+const formModel = new FormModel(events);
+const order = new Order(orderTemplate, events);
+const contacts = new Contacts(contactsTemplate, events);
 
-interface IProductItem {
-	id: string;
-	description: string;
-	image: string;
-	title: string;
-	category: string;
-	price: number | null;
-}
+// рендер товаров
+events.on('productCards:receive', () => {
+  dataModel.productCards.forEach(item => {
+    const card = new Card(cardCatalogTemplate, events, { onClick: () => events.emit('card:select', item) });
+    ensureElement<HTMLElement>('.gallery').append(card.render(item));
+  });
+});
 
-class ItemsModel {
-    private api: Api;
 
-    constructor(baseUrl: string) {
-        this.api = new Api(baseUrl);
-    }
 
-    async getProducts(): Promise<IProductItem[]> {
-        const response = await this.api.get('/product/');
-        console.log(response);
-        const items = (response as any).items as IProductItem[];
+// Открываем модалку товара 
+events.on('modalCard:open', (item: IProductItem) => {
+  const cardPreview = new CardPreview(cardPreviewTemplate, events)
+  modal.content = cardPreview.render(item);
+  modal.render();
+});
 
-        return items.map(item => ({
-            ...item,
-            image: `${CDN_URL}/${item.image}`
-        }));
-    }
-}
+// Добавление товара в корзину
+events.on('card:addBasket', () => {
+  basketModel.addItemToBasket(dataModel.selectedCard) 
+  basket.renderBasketQuantity(basketModel.getQuantity()); 
+  modal.close();
+});
 
-class ItemsView {
-    private galleryElement: HTMLElement;
-    private events: EventEmitter;
+// Открытие модалки корзины 
+events.on('basket:open', () => {
+  basket.renderTotal(basketModel.getProductsSum()); 
+  let i = 0;
+  basket.items = basketModel.basketProducts.map((item) => {
+    const basketItem = new BasketItem(cardBasketTemplate, events, { onClick: () => events.emit('basket:basketItemRemove', item) });
+    i = i + 1;
+    return basketItem.render(item, i);
+  })
+  modal.content = basket.render();
+  modal.render();
+});
 
-    constructor(gallerySelector: string, events: EventEmitter) {
-        const element = document.querySelector(gallerySelector);
-        if (!element) throw new Error(`Element ${gallerySelector} not found`);
-        this.galleryElement = element as HTMLElement;
-        this.events = events;
+// Выбор товара, по которой был клик
+events.on('card:select', (item: IProductItem) => { dataModel.setPreview(item) });
 
-        this.setupEventListeners();
-    }
+// Удаление товара из корзины 
+events.on('basket:basketItemRemove', (item: IProductItem) => {
+  basketModel.deleteItemFromBasket(item);
+  basket.renderBasketQuantity(basketModel.getQuantity()); 
+  basket.renderTotal(basketModel.getProductsSum()); 
+  let i = 0;
+  basket.items = basketModel.basketProducts.map((item) => {
+    const basketItem = new BasketItem(cardBasketTemplate, events, { onClick: () => events.emit('basket:basketItemRemove', item) });
+    i = i + 1;
+    return basketItem.render(item, i);
+  })
+});
 
-    private setupEventListeners() {
-        this.galleryElement.addEventListener('click', (e) => {
-            const target = e.target as HTMLElement;
-            const card = target.closest('.card') as HTMLElement;
-            if (card && card.dataset.id) {
-                this.events.emit('card:click', { id: card.dataset.id });
-            }
-        });
-    }
+// Открытие модалки с оплатой и адресом
+events.on('order:open', () => {
+  modal.content = order.render();
+  modal.render();
+  formModel.items = basketModel.basketProducts.map(item => item.id);
+});
 
-    render(products: { id: string, title: string, category: string, price: number, image: string }[]): void {
-        this.galleryElement.innerHTML = '';
-        const template = document.getElementById('card-catalog') as HTMLTemplateElement;
-        if (!template) throw new Error('Card template not found');
+events.on('order:paymentSelection', (button: HTMLButtonElement) => { formModel.payment = button.name }) 
 
-        products.forEach(product => {
-            const productElement = template.content.cloneNode(true) as HTMLElement;
-            const card = productElement.querySelector('.card') as HTMLElement;
-            const title = productElement.querySelector('.card__title') as HTMLElement;
-            const category = productElement.querySelector('.card__category') as HTMLElement;
-            const price = productElement.querySelector('.card__price') as HTMLElement;
-            const image = productElement.querySelector('.card__image') as HTMLImageElement;
+// Добавляем change event в поле адреса доставки 
+events.on(`order:changeAddress`, (data: { field: string, value: string }) => {
+  formModel.setOrderAddress(data.field, data.value);
+});
 
-            title.textContent = product.title;
-            category.textContent = product.category;
-            price.textContent = product.price ? `${product.price} синапсов` : 'Бесценно';
-            image.src = product.image;
+// Валидация адресса и способа оплаты
+events.on('formErrors:address', (errors: Partial<IOrderForm>) => {
+  const { address, payment } = errors;
+  order.valid = !address && !payment;
+  order.formErrors.textContent = Object.values({address, payment}).filter(i => !!i).join('; ');
+})
 
-            card.dataset.id = product.id;
-            this.galleryElement.appendChild(productElement);
-        });
-    }
-}
+// Открытие модалки с формой телефона и почты 
+events.on('contacts:open', () => {
+  formModel.total = basketModel.getProductsSum();
+  modal.content = contacts.render();
+  modal.render();
+});
 
-class ModalController {
-    private modalElement: HTMLElement;
-    private events: EventEmitter;
+// Добавляем change event в поле телефона и почты
+events.on(`contacts:changeInput`, (data: { field: string, value: string }) => {
+  formModel.setOrderData(data.field, data.value);
+});
 
-    constructor(modalSelector: string, events: EventEmitter) {
-        const element = document.querySelector(modalSelector);
-        if (!element) throw new Error(`Modal ${modalSelector} not found`);
-        this.modalElement = element as HTMLElement;
-        this.events = events;
+// Валидация телефона и почты
+events.on('formErrors:change', (errors: Partial<IOrderForm>) => {
+  const { email, phone } = errors;
+  contacts.valid = !email && !phone;
+  contacts.formErrors.textContent = Object.values({phone, email}).filter(i => !!i).join('; ');
+})
 
-        this.setupEventListeners();
-    }
+// Открытие модалки при успешном заказе
+events.on('success:open', () => {
+  apiModel.postOrder(formModel.getOrderData())
+    .then((data) => {
+      const success = new Success(successTemplate, events);
+      modal.content = success.render(basketModel.getProductsSum());
+      basketModel.clearBasket();
+      basket.renderBasketQuantity(basketModel.getQuantity());
+      modal.render();
+    })
+    .catch(error => console.log(error));
+});
 
-    private setupEventListeners() {
-        this.modalElement.querySelector('.modal__close')?.addEventListener('click', () => {
-            this.closeModal();
-        });
+events.on('success:close', () => modal.close());
 
-        this.modalElement.addEventListener('click', (e) => {
-            if (e.target === this.modalElement) {
-                this.closeModal();
-            }
-        });
+// Блокируем прокрутку страницы при открытой модалки
+events.on('modal:open', () => {
+  modal.locked = true;
+});
 
-        this.events.on('modal:open', (data: IProductItem) => {
-            this.openModal(data);
-        });
+// Снятие блокировки прокрутки
+events.on('modal:close', () => {
+  modal.locked = false;
+});
 
-        const addToBasketButton = this.modalElement.querySelector('.button__add_to_basket');
-        if (addToBasketButton) {
-            addToBasketButton.addEventListener('click', () => {
-                // Получаем данные товара из модального окна
-                const title = this.modalElement.querySelector('.card__title') as HTMLElement;
-                const category = this.modalElement.querySelector('.card__category') as HTMLElement;
-                const price = this.modalElement.querySelector('.card__price') as HTMLElement;
-                const image = this.modalElement.querySelector('.card__image') as HTMLImageElement;
-                const description = this.modalElement.querySelector('.card__text') as HTMLElement;
-
-                // Создаем объект товара
-                const product: IProductItem = {
-                    id: this.modalElement.dataset.id!,
-                    title: title.textContent!,
-                    category: category.textContent!,
-                    price: parseInt(price.textContent || '0'),
-                    image: image.src,
-                    description: description.textContent!,
-                };
-
-                // Вызываем метод addToBasket у presenter
-                this.events.emit('product:addToCart', product);
-            });
-        }
-    }
-
-    openModal(product: IProductItem) {
-        const title = this.modalElement.querySelector('.card__title') as HTMLElement;
-        const category = this.modalElement.querySelector('.card__category') as HTMLElement;
-        const price = this.modalElement.querySelector('.card__price') as HTMLElement;
-        const image = this.modalElement.querySelector('.card__image') as HTMLImageElement;
-        const description = this.modalElement.querySelector('.card__text') as HTMLElement;
-
-        title.textContent = product.title;
-        category.textContent = product.category;
-        price.textContent = product.price ? `${product.price} синапсов` : 'Бесплатно';
-        image.src = product.image;
-        description.textContent = product.description;
-
-        this.modalElement.dataset.id = product.id;
-        this.modalElement.classList.add('modal_active');
-    }
-
-    closeModal() {
-        this.modalElement.classList.remove('modal_active');
-    }
-}
-
-class ItemsPresenter {
-    private productService: ItemsModel;
-    private productView: ItemsView;
-    private events: EventEmitter;
-    private basket: IProductItem[] = [];  // Для хранения товаров в корзине
-
-    constructor(productService: ItemsModel, productView: ItemsView, events: EventEmitter) {
-        this.productService = productService;
-        this.productView = productView;
-        this.events = events;
-
-        this.setupEventListeners();
-    }
-
-    private setupEventListeners() {
-        this.events.on('card:click', async ({ id }: { id: string }) => {
-            const products = await this.productService.getProducts();
-            const product = products.find((item) => item.id === id);
-            if (product) {
-                this.events.emit('modal:open', product);
-            }
-        });
-
-        this.events.on('product:addToCart', (product: IProductItem) => {
-            this.addToBasket(product);
-        });
-    }
-
-    async initialize() {
-        try {
-            const products = await this.productService.getProducts();
-            this.productView.render(products);
-        } catch (error) {
-            console.error('Failed to load products:', error);
-        }
-    }
-
-    private addToBasket(product: IProductItem) {
-        // Проверка, если товар уже в корзине
-        if (!this.basket.some(item => item.id === product.id)) {
-            this.basket.push(product);  // Добавляем товар в корзину
-            this.updateBasketView();
-            console.log(`Товар с id ${product.id} добавлен в корзину!`)
-        } else {
-            console.log(`Товар с id ${product.id} уже в корзине.`);
-        }
-    }
-
-    private updateBasketView() {
-        // Обновление отображения корзины
-        const basketElement = document.querySelector('.header__basket-counter') as HTMLElement;
-        if (basketElement) {
-            basketElement.textContent = this.basket.length.toString();  // Показываем количество товаров в корзине
-        }
-        // Здесь также можно обновить модальное окно корзины, если оно есть
-    }
-}
-
-const productService = new ItemsModel(API_URL);
-const productView = new ItemsView('.gallery', events);
-const itemsPresenter = new ItemsPresenter(productService, productView, events);
-const modalController = new ModalController('#product_modal', events);
-
-itemsPresenter.initialize();
+// Получение данных с сервера
+apiModel.getProductItems()
+  .then(function (data: IProductItem[]) {
+    dataModel.productCards = data;
+  })
+  .catch(error => console.log(error))
