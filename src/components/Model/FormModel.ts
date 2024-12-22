@@ -2,35 +2,82 @@ import { IEvents } from '../base/events';
 import { FormErrors } from '../../types/index'
 
 export interface IFormModel {
-  payment: string;
-  email: string;
-  phone: string;
-  address: string;
-  total: number;
-  items: string[];
-  setOrderAddress(field: string, value: string): void
+  getPayment(): string;
+  setPayment(paymentData: { paymentMethod: string }): void;
+
+  getEmail(): string;
+  setEmail(value: string): void;
+
+  getPhone(): string;
+  setPhone(value: string): void;
+
+  getAddress(): string;
+  setAddress(value: string): void;
+
+  getFormErrors(): FormErrors;
+
+  setOrderAddress(field: string, value: string): void;
   validateAdress(): boolean;
-  setOrderData(field: string, value: string): void
+  setOrderData(field: string, value: string): void;
   validateContacts(): boolean;
-  getOrderData(): { email: string, phone: string, address: string, payment: string, total: number, items: string[] };
+  getOrderData(): {
+    email: string;
+    phone: string;
+    address: string;
+    payment: string;
+  };
 }
 
 export class FormModel implements IFormModel {
-  payment: string;
-  email: string;
-  phone: string;
-  address: string;
-  total: number;
-  items: string[];
-  formErrors: FormErrors = {};
+  private payment: string;
+  private email: string;
+  private phone: string;
+  private address: string;
+  private formErrors: FormErrors = {};
 
   constructor(protected events: IEvents) {
     this.payment = '';
     this.email = '';
     this.phone = '';
     this.address = '';
-    this.total = 0;
-    this.items = [];
+  }
+
+  getPayment() {
+    return this.payment;
+  }
+
+  setPayment(paymentData: { paymentMethod: string }) {
+    const { paymentMethod } = paymentData;
+    this.payment = paymentMethod;
+    this.validateAdress(); // Проверка ошибок, связанных с оплатой
+  }
+
+  getEmail() {
+    return this.email;
+  }
+
+  setEmail(value: string) {
+    this.email = value;
+  }
+
+  getPhone() {
+    return this.phone;
+  }
+
+  setPhone(value: string) {
+    this.phone = value;
+  }
+
+  getAddress() {
+    return this.address;
+  }
+
+  setAddress(value: string) {
+    this.address = value;
+  }
+
+  getFormErrors() {
+    return this.formErrors;
   }
 
   // принимаем значение строки "address"
@@ -40,25 +87,24 @@ export class FormModel implements IFormModel {
     }
 
     if (this.validateAdress()) {
-      this.events.emit('order:ready', this.getOrderData());
+      this.getOrderData();
     }
   }
 
   // валидация данных строки "address"
   validateAdress() {
-    const regexp = /^[а-яА-ЯёЁa-zA-Z0-9\s\/.,-]{7,}$/;
     const errors: typeof this.formErrors = {};
 
     if (!this.address) {
-      errors.address = 'Необходимо указать адрес'
-    } else if (!regexp.test(this.address)) {
-      errors.address = 'Укажите настоящий адрес'
-    } else if (!this.payment) {
-      errors.payment = 'Выберите способ оплаты'
+      errors.address = 'Необходимо указать адрес';
+    }
+    
+    if (!this.payment) {
+      errors.payment = 'Выберите способ оплаты';
     }
 
     this.formErrors = errors;
-    this.events.emit('formErrors:address', this.formErrors);
+    this.events.emit('formErrors:address', this.getFormErrors());
     return Object.keys(errors).length === 0;
   }
 
@@ -71,7 +117,7 @@ export class FormModel implements IFormModel {
     }
 
     if (this.validateContacts()) {
-      this.events.emit('order:ready', this.getOrderData());
+      this.getOrderData();
     }
   }
 
@@ -98,7 +144,7 @@ export class FormModel implements IFormModel {
     }
 
     this.formErrors = errors;
-    this.events.emit('formErrors:change', this.formErrors);
+    this.events.emit('formErrors:change', this.getFormErrors());
     return Object.keys(errors).length === 0;
   }
 
@@ -108,8 +154,6 @@ export class FormModel implements IFormModel {
       email: this.email,
       phone: this.phone,
       address: this.address,
-      total: this.total,
-      items: this.items,
     }
   }
 }

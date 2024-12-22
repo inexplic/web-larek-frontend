@@ -5,7 +5,7 @@ import { IEvents } from "../base/events";
 export interface ICard {
   text: HTMLElement;
   button: HTMLElement;
-  render(data: IProductItem): HTMLElement;
+  render(data: IProductItem, index?: number): HTMLElement;
 }
 
 export class CardPreview extends Card implements ICard {
@@ -16,19 +16,29 @@ export class CardPreview extends Card implements ICard {
     super(template, events, actions);
     this.text = this._cardElement.querySelector('.card__text');
     this.button = this._cardElement.querySelector('.card__button');
-    this.button.addEventListener('click', () => { this.events.emit('card:addBasket') });
+    this.button.addEventListener('click', () => {
+      if (!this.button.hasAttribute('disabled')) {
+        this.events.emit('card:addBasket');
+      }
+    });
   }
 
-  notSale(data:IProductItem) {
-    if(data.price) {
-      return 'Купить'
+  private updateButtonState(data: IProductItem, basketItems: IProductItem[]) {
+    const isInBasket = basketItems.some(item => item.id === data.id);
+
+    if (data.price === null) {
+      this.button.textContent = 'Не продается';
+      this.button.setAttribute('disabled', 'true');
+    } else if (isInBasket) {
+      this.button.textContent = 'В корзине';
+      this.button.setAttribute('disabled', 'true');
     } else {
-      this.button.setAttribute('disabled', 'true')
-      return 'Не продается'
+      this.button.textContent = 'Купить';
+      this.button.removeAttribute('disabled');
     }
   }
 
-  render(data: IProductItem): HTMLElement {
+  render(data: IProductItem, index?: number, basketItems: IProductItem[] = []): HTMLElement {
     this._categoryElement.textContent = data.category;
     this.cardCategory = data.category;
     this._titleElement.textContent = data.title;
@@ -36,7 +46,10 @@ export class CardPreview extends Card implements ICard {
     this._imageElement.alt = this._titleElement.textContent;
     this._priceElement.textContent = this.setPrice(data.price);
     this.text.textContent = data.description;
-    this.button.textContent = this.notSale(data);
+
+    // Обновляем состояние кнопки на основании данных о товаре и корзине
+    this.updateButtonState(data, basketItems);
+
     return this._cardElement;
   }
 }
