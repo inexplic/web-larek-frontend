@@ -21,8 +21,7 @@ export class Basket implements IBasket {
     this.basketPrice = this.basket.querySelector('.basket__price');
 
     this.orderButton.addEventListener('click', () => { this.events.emit('order:open') });
-
-    this.title.textContent = 'Корзина';
+    
     this.updateItemsList([]);
   }
 
