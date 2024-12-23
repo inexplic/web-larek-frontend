@@ -86,9 +86,7 @@ export class FormModel implements IFormModel {
       this.address = value;
     }
 
-    if (this.validateAdress()) {
-      this.getOrderData();
-    }
+    this.validateAdress()
   }
 
   // валидация данных строки "address"
@@ -116,31 +114,19 @@ export class FormModel implements IFormModel {
       this.phone = value;
     }
 
-    if (this.validateContacts()) {
-      this.getOrderData();
-    }
+    this.validateContacts()
   }
 
   // Валидация данных строк "Email" и "Телефон"
   validateContacts() {
-    const regexpEmail = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
-    const regexpPhone = /^((8|\+7)[\- ]?)?(\(?\d{3}\)?[\- ]?)?[\d\- ]{10}$/;
     const errors: typeof this.formErrors = {};
 
     if (!this.email) {
       errors.email = 'Необходимо указать email'
-    } else if (!regexpEmail.test(this.email)) {
-      errors.email = 'Некорректный адрес электронной почты'
-    }
-
-    if (this.phone.startsWith('8')) {
-      this.phone = '+7' + this.phone.slice(1);
     }
 
     if (!this.phone) {
       errors.phone = 'Необходимо указать телефон'
-    } else if (!regexpPhone.test(this.phone)) {
-      errors.phone = 'Некорректный формат номера телефона'
     }
 
     this.formErrors = errors;
