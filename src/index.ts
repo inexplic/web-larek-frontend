@@ -97,9 +97,6 @@ events.on('card:select', (item: IProductItem) => { dataModel.setPreview(item) })
 // Удаление товара из корзины 
 events.on('basket:basketItemRemove', (item: IProductItem) => {
   basketModel.deleteItemFromBasket(item);
-  headerBasket.updateQuantity(basketModel.getQuantity());
-  basket.renderTotal(basketModel.getProductsSum()); 
-  updateBasketItems();
 });
 
 // Открытие модалки с оплатой и адресом
@@ -110,7 +107,6 @@ events.on('order:open', () => {
 
 events.on('order:paymentSelection', ({ paymentMethod }: { paymentMethod: string }) => {
   formModel.setPayment({ paymentMethod }); // Модель обновляет данные
-  order.paymentSelection(paymentMethod); // Обновляем кнопки
 });
 
 // Добавляем change event в поле адреса доставки 
@@ -132,6 +128,11 @@ events.on('formErrors:address', (errors: Partial<IOrderForm>) => {
 
   order.valid = !address && !payment;
   order.updateErrorMessage(errorMessage);
+
+  if (!payment) {
+    const paymentMethod = formModel.getPayment(); // Получаем из модели
+    order.paymentSelection(paymentMethod); // Обновляем кнопки
+  }
 })
 
 // Открытие модалки с формой телефона и почты 
@@ -182,7 +183,6 @@ events.on('success:open', () => {
     .then((data) => {
       modal.content = success.render(total);
       basketModel.clearBasket();
-      headerBasket.updateQuantity(basketModel.getQuantity());
       modal.render();
     })
     .catch(error => console.log(error));
